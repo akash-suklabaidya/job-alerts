@@ -18,61 +18,52 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-def is_pune_or_remote(job):
-    location = job.select_one(".companyLocation")
-    if not location:
-        return False
-
-    loc_text = location.text.lower()
-    return (
-        "pune" in loc_text or
-        "remote" in loc_text or
-        "work from home" in loc_text
-    )
-
 def fetch_jobs():
     jobs = []
-    seen = set()  # avoid duplicates
+    seen = set()
 
     for role in KEYWORDS:
-        url = f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&fromage=1"
-        res = requests.get(url, headers=HEADERS)
-        soup = BeautifulSoup(res.text, "html.parser")
+        searches = [
+            f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&l=Pune&fromage=1",
+            f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&remotejob=1&fromage=1"
+        ]
 
-        for job in soup.select(".job_seen_beacon")[:15]:
-            if not is_pune_or_remote(job):
-                continue
+        for url in searches:
+            res = requests.get(url, headers=HEADERS)
+            soup = BeautifulSoup(res.text, "html.parser")
 
-            title = job.select_one("h2 span")
-            company = job.select_one(".companyName")
-            location = job.select_one(".companyLocation")
-            link = job.find("a", href=True)
+            for job in soup.select(".job_seen_beacon")[:10]:
+                title = job.select_one("h2 span")
+                company = job.select_one(".companyName")
+                location = job.select_one(".companyLocation")
+                link = job.find("a", href=True)
 
-            if not (title and company and location and link):
-                continue
+                if not (title and company and link):
+                    continue
 
-            job_url = "https://www.indeed.co.in" + link["href"]
-            key = (title.text.strip(), company.text.strip())
+                job_url = "https://www.indeed.co.in" + link["href"]
+                loc_text = location.text.strip() if location else "Location not specified"
 
-            if key in seen:
-                continue
+                key = (title.text.strip(), company.text.strip())
+                if key in seen:
+                    continue
 
-            seen.add(key)
+                seen.add(key)
 
-            jobs.append(
-                f"{title.text.strip()} | {company.text.strip()} | {location.text.strip()}\n{job_url}"
-            )
+                jobs.append(
+                    f"{title.text.strip()} | {company.text.strip()} | {loc_text}\n{job_url}"
+                )
 
     return jobs
 
 def send_email(jobs):
     if not jobs:
-        body = "No Pune or Remote jobs found today on Indeed."
+        body = "No new Pune or Remote jobs found today on Indeed."
     else:
         body = "\n\n".join(jobs)
 
     msg = MIMEText(body)
-    msg["Subject"] = "Daily Jobs: Pune or Remote (Indeed)"
+    msg["Subject"] = "Daily Jobs: Pune + Remote (Indeed)"
     msg["From"] = EMAIL
     msg["To"] = EMAIL
 
