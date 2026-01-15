@@ -1,0 +1,23 @@
+name: Daily Pune Job Email
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 9:00 AM IST
+  workflow_dispatch:
+
+jobs:
+  send-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - run: pip install requests beautifulsoup4
+
+      - run: python job_alert.py
+        env:
+          EMAIL: ${{ secrets.EMAIL }}
+          PASSWORD: ${{ secrets.PASSWORD }}
