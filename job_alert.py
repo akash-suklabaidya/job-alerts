@@ -7,9 +7,9 @@ import os
 EMAIL = os.environ["EMAIL"]
 PASSWORD = os.environ["PASSWORD"]
 
-KEYWORDS = [
-    "Software Developer",
+ROLES = [
     "Software Engineer",
+    "Software Developer",
     "Java Backend Developer",
     "Frontend Developer"
 ]
@@ -18,52 +18,78 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-def fetch_jobs():
+def fetch_indeed(role):
+    urls = [
+        f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&l=Pune",
+        f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&remotejob=1"
+    ]
+    return fetch_generic(urls, "Indeed")
+
+def fetch_simplyhired(role):
+    urls = [
+        f"https://www.simplyhired.co.in/search?q={role.replace(' ', '+')}&l=Pune",
+        f"https://www.simplyhired.co.in/search?q={role.replace(' ', '+')}&l=Remote"
+    ]
+    return fetch_generic(urls, "SimplyHired")
+
+def fetch_glassdoor(role):
+    urls = [
+        f"https://www.glassdoor.co.in/Job/pune-{role.replace(' ', '-')}-jobs-SRCH_IL.0,4_IC2856202_KO5,20.htm",
+        f"https://www.glassdoor.co.in/Job/india-remote-{role.replace(' ', '-')}-jobs-SRCH_IL.0,5_IN115_KO6,21.htm"
+    ]
+    return fetch_generic(urls, "Glassdoor")
+
+def fetch_generic(urls, source):
     jobs = []
-    seen = set()
-
-    for role in KEYWORDS:
-        searches = [
-            f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&l=Pune&fromage=1",
-            f"https://www.indeed.co.in/jobs?q={role.replace(' ', '+')}&remotejob=1&fromage=1"
-        ]
-
-        for url in searches:
-            res = requests.get(url, headers=HEADERS)
+    for url in urls:
+        try:
+            res = requests.get(url, headers=HEADERS, timeout=15)
             soup = BeautifulSoup(res.text, "html.parser")
 
-            for job in soup.select(".job_seen_beacon")[:10]:
-                title = job.select_one("h2 span")
-                company = job.select_one(".companyName")
-                location = job.select_one(".companyLocation")
-                link = job.find("a", href=True)
+            for a in soup.select("a[href]"):
+                text = a.get_text(strip=True)
+                href = a.get("href")
 
-                if not (title and company and link):
+                if not text or not href:
                     continue
 
-                job_url = "https://www.indeed.co.in" + link["href"]
-                loc_text = location.text.strip() if location else "Location not specified"
+                if any(k.lower() in text.lower() for k in ["engineer", "developer", "backend", "frontend"]):
+                    if href.startswith("/"):
+                        href = url.split("/")[0] + "//" + url.split("/")[2] + href
 
-                key = (title.text.strip(), company.text.strip())
-                if key in seen:
-                    continue
-
-                seen.add(key)
-
-                jobs.append(
-                    f"{title.text.strip()} | {company.text.strip()} | {loc_text}\n{job_url}"
-                )
+                    jobs.append(f"{text} | {source}\n{href}")
+        except Exception:
+            continue
 
     return jobs
 
+def fetch_all_jobs():
+    all_jobs = []
+    seen = set()
+
+    for role in ROLES:
+        sources = (
+            fetch_indeed(role)
+            + fetch_simplyhired(role)
+            + fetch_glassdoor(role)
+        )
+
+        for job in sources:
+            key = job.split("\n")[0]
+            if key not in seen:
+                seen.add(key)
+                all_jobs.append(job)
+
+    return all_jobs[:30]  # cap email size
+
 def send_email(jobs):
     if not jobs:
-        body = "No new Pune or Remote jobs found today on Indeed."
+        body = "No jobs found today across job portals."
     else:
         body = "\n\n".join(jobs)
 
     msg = MIMEText(body)
-    msg["Subject"] = "Daily Jobs: Pune + Remote (Indeed)"
+    msg["Subject"] = "Daily Jobs: Pune or Remote (Multi-Portal)"
     msg["From"] = EMAIL
     msg["To"] = EMAIL
 
@@ -74,5 +100,5 @@ def send_email(jobs):
     server.quit()
 
 if __name__ == "__main__":
-    jobs = fetch_jobs()
+    jobs = fetch_all_jobs()
     send_email(jobs)
